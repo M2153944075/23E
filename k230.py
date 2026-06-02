@@ -31,18 +31,18 @@ try:
         os.exitpoint()
         img = sensor.snapshot (chn=CAM_CHN_ID_0)
 
-#        img_rect = img.to_grayscale(copy = True)
-#        img_rect = img_rect.binary([(67, 168)])
-#        rects = img_rect.find_rects(threshold=5000)
-#        for rect in rects:
-#            corner = rect.corners()
-#            img.draw_line(corner[0][0], corner[0][1], corner[1][0], corner[1][1], color=(0, 255, 0))
-#            img.draw_line(corner[1][0], corner[1][1], corner[2][0], corner[2][1], color=(0, 255, 0))
-#            img.draw_line(corner[2][0], corner[2][1], corner[3][0], corner[3][1], color=(0, 255, 0))
-#            img.draw_line(corner[3][0], corner[3][1], corner[0][0], corner[0][1], color=(0, 255, 0))
+        img_rect = img.to_grayscale(copy = True)
+        img_rect = img_rect.binary([(67, 168)])
+        rects = img_rect.find_rects(threshold=5000)
+        for rect in rects:
+            corner = rect.corners()
+            img.draw_line(corner[0][0], corner[0][1], corner[1][0], corner[1][1], color=(0, 255, 0))
+            img.draw_line(corner[1][0], corner[1][1], corner[2][0], corner[2][1], color=(0, 255, 0))
+            img.draw_line(corner[2][0], corner[2][1], corner[3][0], corner[3][1], color=(0, 255, 0))
+            img.draw_line(corner[3][0], corner[3][1], corner[0][0], corner[0][1], color=(0, 255, 0))
 
-#        img.draw_string_advanced(0,0,40,"fps:{}".format(clock.fps()),color=(255,0,0))
-#        Display.show_image(img)
+        img.draw_string_advanced(0,0,40,"fps:{}".format(clock.fps()),color=(255,0,0))
+        Display.show_image(img)
 
         print("fps:{}".format(clock.fps()))
 
