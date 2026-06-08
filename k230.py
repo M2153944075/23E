@@ -1,59 +1,256 @@
-import time, os, sys
 
-from media.sensor import * #导入sensor模块，使用摄像头相关接口
-from media.display import * #导入display模块，使用display相关接口
-from media.media import * #导入media模块，使用meida相关接口
-import time
+import time, os, sys, gc
+import cv_lite                 # cv_lite扩展模块 / cv_lite extension (C bindings)
+import ulab.numpy as np        # MicroPython NumPy类库
 
-sensor = None
-
-try:
-    print("camera_test")
-    sensor = Sensor() #构建摄像头对象
-    sensor.reset() #复位和初始化摄像头
-
-    #sensor.set_framesize(Sensor.FHD) #设置帧大小FHD(1920x1080)，缓冲区和HDMI用,默认通道0
-    sensor.set_framesize(width=800,height=480) #设置帧大小800x480,LCD专用,默认通道0
-    sensor.set_pixformat(Sensor.RGB565) #设置输出图像格式，默认通道0
+from machine import Pin, Timer
+from media.sensor import *     # 摄像头接口 / Camera interface
+from media.display import *    # 显示接口 / Display interface
+from media.media import *      # 媒体资源管理器 / Media manager
+from machine import Pin
+from machine import FPIOA
+from machine import UART
+from Emm_V5 import EmmV5, SysParams
 
 
-    #Display.init(Display.VIRT, sensor.width(), sensor.height(), to_ide=True) #通过IDE缓冲区显示图像
-    Display.init(Display.ST7701, to_ide=True) #通过01Studio 3.5寸mipi显示屏显示图像
-    #初始化媒体管理器
-    MediaManager.init()
-    #启动
-    sensor.run()
 
-    clock = time.clock()
+# ---------- 1. 视觉阈值与参数 ----------
+# 红色激光笔阈值（LAB色彩空间）
+LASER_THRESHOLD = (67, 100, -19, 44, -14, 7)
 
-    while True:
-        clock.tick()
-        os.exitpoint()
-        img = sensor.snapshot (chn=CAM_CHN_ID_0)
+# 矩形检测参数（可根据实际图像调整）
+CANNY_THRESH1 = 50
+CANNY_THRESH2 = 150
+APPROX_EPSILON = 0.02
+AREA_MIN_RATIO = 0.05
+MAX_ANGLE_COS = 0.2
+GAUSSIAN_BLUR_SIZE = 5
 
-        img_rect = img.to_grayscale(copy = True)
-        img_rect = img_rect.binary([(67, 168)])
-        rects = img_rect.find_rects(threshold=5000)
-        for rect in rects:
-            corner = rect.corners()
-            img.draw_line(corner[0][0], corner[0][1], corner[1][0], corner[1][1], color=(0, 255, 0))
-            img.draw_line(corner[1][0], corner[1][1], corner[2][0], corner[2][1], color=(0, 255, 0))
-            img.draw_line(corner[2][0], corner[2][1], corner[3][0], corner[3][1], color=(0, 255, 0))
-            img.draw_line(corner[3][0], corner[3][1], corner[0][0], corner[0][1], color=(0, 255, 0))
 
-        img.draw_string_advanced(0,0,40,"fps:{}".format(clock.fps()),color=(255,0,0))
-        Display.show_image(img)
 
-        print("fps:{}".format(clock.fps()))
+# ---------- 2. 硬件初始化 ----------
+fpioa = FPIOA()
+# UART1初始化
+fpioa.set_function(3,FPIOA.UART1_TXD)
+fpioa.set_function(4,FPIOA.UART1_RXD)
+uart1 = UART(UART.UART1, 115200) #设置串口号1和波特率
+# UART2初始化
+fpioa.set_function(11,FPIOA.UART2_TXD)
+fpioa.set_function(12,FPIOA.UART2_RXD)
+uart2 = UART(UART.UART2, 115200) #设置串口号1和波特率
+# KEY初始化
+fpioa.set_function(52,FPIOA.GPIO52)
+fpioa.set_function(21,FPIOA.GPIO21)
+LED=Pin(52,Pin.OUT) #构建LED对象,开始熄灭
+KEY=Pin(21,Pin.IN,Pin.PULL_UP) #构建KEY对象
+state=0 #LED引脚状态
+# 激光笔引脚初始化
+fpioa.set_function(2,FPIOA.GPIO2)
+jiguang=Pin(2,Pin.OUT)
 
-except KeyboardInterrupt as e:
-    print("用户停止:",e)
-except Exception as e:
-    print(f"异常:{e}")
-finally:
-    if isinstance(sensor, Sensor):
-        sensor.stop()
-    Display.deinit()
-    os.exitpoint(os.EXITPOINT_ENABLE_SLEEP)
-    time.sleep_ms(100)
-    MediaManager.deinit()
+
+
+# ---------- 3. 视觉初始化 ----------
+# 图像尺寸设置 / Image resolution
+image_shape = [480, 800]  # 高 x 宽 / Height x Width
+
+# 初始化摄像头（灰度图模式） / Initialize camera (grayscale mode)
+sensor = Sensor() #构建摄像头对象
+sensor.reset() #复位和初始化摄像头
+
+#sensor.set_framesize(Sensor.FHD) #设置帧大小FHD(1920x1080)，缓冲区和HDMI用,默认通道0
+sensor.set_framesize(width=800,height=480) #设置帧大小800x480,LCD专用,默认通道0
+sensor.set_pixformat(Sensor.RGB565) #设置输出图像格式，默认通道0
+
+# 初始化显示器（IDE虚拟输出） / Initialize display (IDE virtual output)
+Display.init(Display.ST7701, to_ide=True) #通过01Studio 3.5寸mipi显示屏显示图像
+
+# 初始化媒体系统 / Initialize media system
+sensor.run()
+
+# 启动帧率计时 / Start FPS timer
+clock = time.clock()
+
+
+
+# ---------- 矩形框识别 ----------
+def sort_corners_clockwise(corners):
+    """
+    将四个角点排序为顺时针顺序（从左上角开始）
+    corners: [(x1,y1), (x2,y2), (x3,y3), (x4,y4)]
+    返回: [左上, 右上, 右下, 左下]
+    """
+    # 按 y 坐标排序，取前两个为顶部点，后两个为底部点
+    sorted_by_y = sorted(corners, key=lambda p: p[1])
+    top = sorted_by_y[:2]      # y 值较小的两个
+    bottom = sorted_by_y[2:]   # y 值较大的两个
+    # 在顶部点中，x 较小的为左上，x 较大的为右上
+    top_left = min(top, key=lambda p: p[0])
+    top_right = max(top, key=lambda p: p[0])
+    # 在底部点中，x 较小的为左下，x 较大的为右下
+    bottom_left = min(bottom, key=lambda p: p[0])
+    bottom_right = max(bottom, key=lambda p: p[0])
+    return [top_left, top_right, bottom_right, bottom_left]
+
+
+def detect_rectangle(img):
+
+    img_gray = img.to_grayscale(copy=False)    # 节省内存
+    img_np = img_gray.bytearray()  # 获取灰度数据
+    image_shape = (img.height(), img.width())  # 注意顺序：高、宽
+
+    rects = cv_lite.grayscale_find_rectangles_with_corners(
+        image_shape, img_np,
+        CANNY_THRESH1, CANNY_THRESH2,
+        APPROX_EPSILON,
+        AREA_MIN_RATIO,
+        MAX_ANGLE_COS,
+        GAUSSIAN_BLUR_SIZE
+    )
+    if not rects:
+        return None
+    # 找出面积最大的矩形（w*h 最大）
+    best = max(rects, key=lambda r: r[2]*r[3])  # r[2]=w, r[3]=h
+    # 提取四个角点：格式 (cx1,cy1, cx2,cy2, cx3,cy3, cx4,cy4) 索引4~11
+    corners = [(best[4], best[5]), (best[6], best[7]),
+               (best[8], best[9]), (best[10], best[11])]
+    return corners
+
+
+ # ---------- 红色激光笔识别 ----------
+def detect_RedBlobs(img):
+
+    img = sensor.snapshot()
+
+    # 寻找符合红色激光笔阈值的色块
+    blobs = img.find_blobs([laser_threshold], pixels_threshold=10, area_threshold=10)
+
+    if blobs:
+        # 取面积最大的色块作为激光笔光斑（避免干扰）
+        laser_blob = max(blobs, key=lambda b: b.area())
+        # 在中心点绘制红色十字
+        img.draw_cross(laser_blob.cx(), laser_blob.cy(),color=(0, 0, 255), size=15, thickness=3)
+        # 直接返回中心坐标 (cx, cy)
+        return (laser_blob.cx(), laser_blob.cy())
+    return None  # 未检测到则返回 None
+
+
+
+ # ---------- 步进电机 ----------
+
+# 按键变量
+Key_Num = 0
+CurrState = 0
+PrevState = 0
+case = 0
+
+# 获取按键状态
+def Key_GetNum():
+    global Key_Num
+
+    if Key_Num:
+        temp = Key_Num
+        Key_Num = 0
+        return temp
+
+    return 0
+
+
+
+# 按键扫描任务
+def Key_Tick(tim):
+
+    global CurrState
+    global PrevState
+    global Key_Num
+
+    PrevState = CurrState
+    CurrState = 1 if KEY.value() == 0 else 0
+
+    if CurrState == 0 and PrevState == 1:
+        Key_Num = 1
+
+
+
+
+# 启动定时器
+tim = Timer(-1)
+
+tim.init(
+    period=20,
+    mode=Timer.PERIODIC,
+    callback=Key_Tick
+)
+
+
+
+
+ # ---------- 步进电机 ----------
+#四角插值，平滑移动
+motor1 = EmmV5(uart1)
+motor2 = EmmV5(uart2)
+def lerp(p1,p2,n):
+
+    pts=[]
+
+    for i in range(n):
+
+        t=i/(n-1)
+
+        x=int(p1[0]+(p2[0]-p1[0])*t)
+        y=int(p1[1]+(p2[1]-p1[1])*t)
+
+        pts.append((x,y))
+
+    return pts
+
+
+
+count = 0
+control_interval = 70
+step = 0                # 0：空闲；1：等待执行第二步
+
+
+
+# ---------- 4. 状态机 ----------
+# 状态定义
+STATE_DETECT_RECT = 0    # 等待检测矩形
+STATE_MOVE_TO_CORNER = 1 # 正在移向某个角点
+STATE_DONE = 2           # 完成一圈
+
+red_pos = 0
+
+# -------------------------------
+# 主循环 / Main loop
+# -------------------------------
+while True:
+    clock.tick()
+    img = sensor.snapshot()
+
+
+    # 显示FPS
+    img.draw_string_advanced(0,0,40,"fps:{}".format(clock.fps()),color=(255,0,0))
+
+    # ----- 第一步：检测激光笔当前位置 -----
+    red_pos = detect_RedBlobs(img)
+
+    # ----- 第二步：根据状态执行任务 -----
+    if state == STATE_DETECT_RECT:
+        # 尝试检测矩形
+        corners = detect_rectangle(img)
+
+
+    Display.show_image(img)
+
+    # 垃圾回收 & 输出帧率/ Garbage collect and print FPS
+    gc.collect()
+    print("fps:", clock.fps())
+
+# -------------------------------
+# 程序退出与资源释放 / Cleanup on exit
+# -------------------------------
+sensor.stop()
+Display.deinit()
+os.exitpoint(os.EXITPOINT_ENABLE_SLEEP)
+time.sleep_ms(100)
+
