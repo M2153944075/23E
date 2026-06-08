@@ -1,15 +1,5 @@
-from enum import IntEnum
-from typing import List, Union
-
-
-# 宏定义
-def ABS(x: Union[int, float]) -> Union[int, float]:
-    """返回绝对值"""
-    return x if x > 0 else -x
-
-
 # 系统参数枚举
-class SysParams(IntEnum):
+class SysParams():
     S_VER   = 0   # 获取软件版本和相应硬件版本
     S_RL    = 1   # 获取读取运行状态
     S_PID   = 2   # 获取PID参数
@@ -52,27 +42,19 @@ class EmmV5:
     """Emm V5 驱动器控制类"""
 
     def __init__(self, uart):
-        """
-        :param uart: 串口对象，需要实现 send_cmd(data: bytes) 方法
-        """
         self.uart = uart
-
-    def _send(self, cmd: List[int]):
-        """将命令列表转换为字节并发送"""
-        self.uart.send_cmd(bytes(cmd))
-
     # -----------------------------------------------------------------
     # 原始函数映射
     # -----------------------------------------------------------------
     def reset_curpos_to_zero(self, addr: int):
         """重置当前位置为零"""
         cmd = [addr, 0x0A, 0x6D, _CHECK_BYTE]
-        self._send(cmd)
+        self.uart.write(bytes(cmd))
 
     def reset_clog_pro(self, addr: int):
         """重置堵转保护"""
         cmd = [addr, 0x0E, 0x52, _CHECK_BYTE]
-        self._send(cmd)
+        self.uart.write(bytes(cmd))
 
     def read_sys_params(self, addr: int, s: SysParams):
         """读取系统参数"""
@@ -83,7 +65,7 @@ class EmmV5:
         cmd = [addr]
         cmd.extend(codes)
         cmd.append(_CHECK_BYTE)
-        self._send(cmd)
+        self.uart.write(bytes(cmd))
 
     def modify_ctrl_mode(self, addr: int, svF: int, ctrl_mode: int):
         """
@@ -92,7 +74,7 @@ class EmmV5:
         :param ctrl_mode: 控制模式 (0关闭,1脉冲,2步进,3环形位置/位置控制)
         """
         cmd = [addr, 0x46, 0x69, svF, ctrl_mode, _CHECK_BYTE]
-        self._send(cmd)
+        self.uart.write(bytes(cmd))
 
     def en_control(self, addr: int, state: int, snF: int):
         """
@@ -101,7 +83,7 @@ class EmmV5:
         :param snF: 同步控制标志 0不同步 1同步
         """
         cmd = [addr, 0xF3, 0xAB, state, snF, _CHECK_BYTE]
-        self._send(cmd)
+        self.uart.write(bytes(cmd))
 
     def vel_control(self, addr: int, dir_: int, vel: int, acc: int, snF: int):
         """
@@ -121,7 +103,7 @@ class EmmV5:
             snF,
             _CHECK_BYTE
         ]
-        self._send(cmd)
+        self.uart.write(bytes(cmd))
 
     def pos_control(self, addr: int, dir_: int, vel: int, acc: int,
                     clk: int, raF: int, snF: int):
@@ -149,17 +131,17 @@ class EmmV5:
             snF,
             _CHECK_BYTE
         ]
-        self._send(cmd)
+        self.uart.write(bytes(cmd))
 
     def stop_now(self, addr: int, snF: int):
         """立即停止电机运行（所有模式通用）"""
         cmd = [addr, 0xFE, 0x98, snF, _CHECK_BYTE]
-        self._send(cmd)
+        self.uart.write(bytes(cmd))
 
     def synchronous_motion(self, addr: int):
         """驱动器同步开始运动"""
         cmd = [addr, 0xFF, 0x66, _CHECK_BYTE]
-        self._send(cmd)
+        self.uart.write(bytes(cmd))
 
     def origin_set_o(self, addr: int, svF: int):
         """
@@ -167,7 +149,7 @@ class EmmV5:
         :param svF: 是否存储标志 0不存储 1存储
         """
         cmd = [addr, 0x93, 0x88, svF, _CHECK_BYTE]
-        self._send(cmd)
+        self.uart.write(bytes(cmd))
 
     def origin_modify_params(self, addr: int, svF: int, o_mode: int,
                              o_dir: int, o_vel: int, o_tm: int,
@@ -205,7 +187,7 @@ class EmmV5:
             potF,
             _CHECK_BYTE
         ]
-        self._send(cmd)
+        self.uart.write(bytes(cmd))
 
     def origin_trigger_return(self, addr: int, o_mode: int, snF: int):
         """
@@ -214,25 +196,15 @@ class EmmV5:
         :param snF: 同步控制标志
         """
         cmd = [addr, 0x9A, o_mode, snF, _CHECK_BYTE]
-        self._send(cmd)
+        self.uart.write(bytes(cmd))
 
     def origin_interrupt(self, addr: int):
         """强制中断退出原点"""
         cmd = [addr, 0x9C, 0x48, _CHECK_BYTE]
-        self._send(cmd)
+        self.uart.write(bytes(cmd))
 
 
 
 
 
-#    # -----------------------------------------------------------------
-#使用历程
 
-# 1. 实例化驱动器控制类，并传入串口对象
-my_uart = MyUart()
-drive = EmmV5(my_uart)
-
-# 2. 调用 vel_control 进行速度模式控制
-#    例如：驱动器地址为 1，CW 方向，速度 1200 RPM，加速度 50，立即执行（不同步）
-drive.vel_control(addr=1, dir_=0, vel=1200, acc=50, snF=0)
-drive.vel_control(1, 0, 1200, 50, 0)
