@@ -14,7 +14,7 @@ import ulab.numpy as np        # MicroPython NumPy类库
 from machine import Pin
 from machine import FPIOA
 from machine import UART
-from Emm_V5 import EmmV5, SysParams
+#from Emm_V5 import EmmV5, SysParams
 
 
 fpioa = FPIOA()
@@ -150,8 +150,8 @@ tim.init(
 )
 
 
-motor1 = EmmV5(uart1)
-motor2 = EmmV5(uart2)
+#motor1 = EmmV5(uart1)
+#motor2 = EmmV5(uart2)
 
 count = 0
 control_interval = 70
@@ -190,68 +190,68 @@ while True:
             img.draw_line(corners[j][0], corners[j][1], corners[(j+1)%4][0], corners[(j+1)%4][1], color=(0,255,0))
             img.draw_cross(corners[j][0], corners[j][1], color=(0,255,0), size=10, thickness=2)
 
-    count += 1
-    print(count)
-    if Key_GetNum():
-        case += 1
-        if case == 1:
-            jiguang.on()
-            LED.on()
-        elif case == 2:
+##    count += 1
+##    print(count)
+##    if Key_GetNum():
+##        case += 1
+##        if case == 1:
+##            jiguang.on()
+##            LED.on()
+##        elif case == 2:
 
-            LED.off()
-            # motor1 o_dir 0 左 1 右
-            # motor1 o_dir 0 下 1 上
-            #左下
-            motor1.pos_control(1, 0, 10, 5, 470, 0, 0)
-            motor2.pos_control(2, 0, 10, 5, 480, 0, 0)
+##            LED.off()
+##            # motor1 o_dir 0 左 1 右
+##            # motor1 o_dir 0 下 1 上
+##            #左下
+##            motor1.pos_control(1, 0, 10, 5, 470, 0, 0)
+##            motor2.pos_control(2, 0, 10, 5, 480, 0, 0)
 
-            start_count1 = count   # 记录当前帧计数（或直接 reset 一个专用计数器）
-            step = 1              # 进入等待第二步的状态
+##            start_count1 = count   # 记录当前帧计数（或直接 reset 一个专用计数器）
+##            step = 1              # 进入等待第二步的状态
 
-#            motor1.pos_control(1, 1, 100, 50, 300, 0, 0)
-#            motor2.pos_control(2, 0, 100, 50, 197, 0, 0)
+###            motor1.pos_control(1, 1, 100, 50, 300, 0, 0)
+###            motor2.pos_control(2, 0, 100, 50, 197, 0, 0)
 
-#            motor1.pos_control(1, 1, 100, 50, 300, 0, 0)
-#            motor2.pos_control(2, 0, 100, 50, 197, 0, 0)
-        elif case == 3:
-            motor1.origin_trigger_return(1,0,0)
-            motor2.origin_trigger_return(2,0,0)
-            step = 0
-        else:
-            pass
+##            motor1.pos_control(1, 1, 100, 50, 300, 0, 0)
+##            motor2.pos_control(2, 0, 100, 50, 197, 0, 0)
+#        elif case == 3:
+#            motor1.origin_trigger_return(1,0,0)
+#            motor2.origin_trigger_return(2,0,0)
+#            step = 0
+#        else:
+#            pass
 
-    # 状态处理：检查是否到了执行第二步的时机
-    #左上
-    if step == 1:
-        if (count - start_count1) >= control_interval:
-            # 间隔帧数已到，执行第二步
-            motor2.pos_control(2, 1, 10, 5, 960, 0, 0)
-            start_count2 = count   # 记录当前帧计数（或直接 reset 一个专用计数器）
-            step = 2              # 进入等待第二步的状态
-    #右上
-    elif step == 2:
-        if (count - start_count2) >= control_interval:
-            # 间隔帧数已到，执行第二步
-            motor1.pos_control(1, 1, 10, 5, 940, 0, 0)
-            start_count3 = count   # 记录当前帧计数（或直接 reset 一个专用计数器）
-            step = 3              # 进入等待第二步的状态
-    #右下
-    elif step == 3:
-        if (count - start_count3) >= control_interval:
-            # 间隔帧数已到，执行第二步
-            motor2.pos_control(2, 0, 10, 5, 960, 0, 0)
-            start_count4 = count   # 记录当前帧计数（或直接 reset 一个专用计数器）
-            step = 4              # 进入等待第二步的状态
-    #左下
-    elif step == 4:
-        if (count - start_count4) >= control_interval:
-            # 间隔帧数已到，执行第二步
-            motor1.pos_control(1, 0, 10, 5, 940, 0, 0)
-            count = 0   # 记录当前帧计数（或直接 reset 一个专用计数器）
-            step = 0              # 进入等待第二步的状态
-    else:
-        pass
+#    # 状态处理：检查是否到了执行第二步的时机
+#    #左上
+#    if step == 1:
+#        if (count - start_count1) >= control_interval:
+#            # 间隔帧数已到，执行第二步
+#            motor2.pos_control(2, 1, 10, 5, 960, 0, 0)
+#            start_count2 = count   # 记录当前帧计数（或直接 reset 一个专用计数器）
+#            step = 2              # 进入等待第二步的状态
+#    #右上
+#    elif step == 2:
+#        if (count - start_count2) >= control_interval:
+#            # 间隔帧数已到，执行第二步
+#            motor1.pos_control(1, 1, 10, 5, 940, 0, 0)
+#            start_count3 = count   # 记录当前帧计数（或直接 reset 一个专用计数器）
+#            step = 3              # 进入等待第二步的状态
+#    #右下
+#    elif step == 3:
+#        if (count - start_count3) >= control_interval:
+#            # 间隔帧数已到，执行第二步
+#            motor2.pos_control(2, 0, 10, 5, 960, 0, 0)
+#            start_count4 = count   # 记录当前帧计数（或直接 reset 一个专用计数器）
+#            step = 4              # 进入等待第二步的状态
+#    #左下
+#    elif step == 4:
+#        if (count - start_count4) >= control_interval:
+#            # 间隔帧数已到，执行第二步
+#            motor1.pos_control(1, 0, 10, 5, 940, 0, 0)
+#            count = 0   # 记录当前帧计数（或直接 reset 一个专用计数器）
+#            step = 0              # 进入等待第二步的状态
+#    else:
+#        pass
 
 
     # 显示图像 / Show image

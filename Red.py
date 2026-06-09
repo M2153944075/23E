@@ -12,7 +12,7 @@ from media.media import *
 
 # 红色激光笔阈值 (L Min, L Max, A Min, A Max, B Min, B Max)
 # 激光笔为高亮度红色，L值较高，可根据实际效果微调
-laser_threshold = (67, 100, -19, 44, -14, 7)  # 推荐阈值
+laser_threshold = (68, 100, -27, 33, -20, 11)  # 推荐阈值
 
 sensor = Sensor()
 sensor.reset()
@@ -36,15 +36,11 @@ while True:
         # 取面积最大的色块作为激光笔光斑（避免干扰）
         laser_blob = max(blobs, key=lambda b: b.area())
         # 在中心点绘制红色十字
-        img.draw_cross(laser_blob.cx(), laser_blob.cy(),
-                       color=(0, 0, 255), size=15, thickness=3)
+        img.draw_cross(laser_blob.cx(), laser_blob.cy(),color=(0, 0, 255), size=15, thickness=3)
         # （可选）在十字上方显示坐标
-        img.draw_string_advanced(laser_blob.cx() + 10, laser_blob.cy() - 10, 20,
-                                 "Laser", color=(0, 0, 255))
+        img.draw_string_advanced(laser_blob.cx() + 10, laser_blob.cy() - 10, 20,"Laser", color=(0, 0, 255))
 
     # 显示FPS
-    img.draw_string_advanced(0, 0, 30,
-                             'FPS: ' + str("%.3f" % clock.fps()),
-                             color=(255, 255, 255))
+    img.draw_string_advanced(0, 0, 30,'FPS: ' + str("%.3f" % clock.fps()),color=(255, 255, 255))
     Display.show_image(img)
     print(clock.fps())
