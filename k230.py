@@ -16,15 +16,15 @@ from machine import UART
 
 # ---------- 1. 视觉阈值与参数 ----------
 # 红色激光笔阈值（LAB色彩空间）
-LASER_THRESHOLD = (67, 100, -19, 44, -14, 7)
+laser_threshold = (91, 100, -22, 9, -9, 16)  # 推荐阈值
 
 # 矩形检测参数（可根据实际图像调整）
-CANNY_THRESH1 = 50
-CANNY_THRESH2 = 150
-APPROX_EPSILON = 0.02
-AREA_MIN_RATIO = 0.05
-MAX_ANGLE_COS = 0.2
-GAUSSIAN_BLUR_SIZE = 5
+canny_thresh1       = 48        # Canny 边缘检测低阈值 / Canny edge low threshold
+canny_thresh2       = 155       # Canny 边缘检测高阈值 / Canny edge high threshold
+approx_epsilon      = 0.04      # 多边形拟合精度（比例） / Polygon approximation precision (ratio)
+area_min_ratio      = 0.001     # 最小面积比例（0~1） / Minimum area ratio (0~1)
+max_angle_cos       = 0.5       # 最大角余弦（值越小越接近矩形） / Max cosine of angle (smaller closer to rectangle)
+gaussian_blur_size  = 5         # 高斯模糊核大小（奇数） / Gaussian blur kernel size (odd number)
 
 
 
@@ -55,12 +55,19 @@ jiguang=Pin(2,Pin.OUT)
 image_shape = [480, 800]  # 高 x 宽 / Height x Width
 
 # 初始化摄像头（灰度图模式） / Initialize camera (grayscale mode)
-sensor = Sensor(id=2) #构建摄像头对象
+sensor = Sensor() #构建摄像头对象
 sensor.reset() #复位和初始化摄像头
 
-#sensor.set_framesize(Sensor.FHD) #设置帧大小FHD(1920x1080)，缓冲区和HDMI用,默认通道0
-sensor.set_framesize(width=800,height=480) #设置帧大小800x480,LCD专用,默认通道0
-sensor.set_pixformat(Sensor.RGB888) #设置输出图像格式，默认通道0
+sensor.set_framesize(width=800, height=480, chn=0)   # 通道0：占位
+sensor.set_pixformat(sensor.RGB565, chn=0)           # 随便给个格式
+
+# 通道1：您的需求（800x480, RGB888）
+sensor.set_framesize(width=800, height=480, chn=1)
+sensor.set_pixformat(sensor.RGB888, chn=1)
+
+# 通道2：您的需求（800x480, RGB565）
+sensor.set_framesize(width=800, height=480, chn=2)
+sensor.set_pixformat(sensor.RGB565, chn=2)
 
 # 初始化显示器（IDE虚拟输出） / Initialize display (IDE virtual output)
 Display.init(Display.ST7701, to_ide=True) #通过01Studio 3.5寸mipi显示屏显示图像
@@ -76,45 +83,28 @@ clock = time.clock()
 # ---------- 矩形框识别 ----------
 def detect_rectangle(img):
 
-    img_gray = img.to_grayscale(copy=False)
-    img_np = img_gray.bytearray()
-    image_shape = (img.height(), img.width())
-    rects = cv_lite.grayscale_find_rectangles_with_corners(
-        image_shape,
-        img_np,
-        CANNY_THRESH1,
-        CANNY_THRESH2,
-        APPROX_EPSILON,
-        AREA_MIN_RATIO,
-        MAX_ANGLE_COS,
-        GAUSSIAN_BLUR_SIZE
-    )
+    gc.collect()
 
-    print("5")
+    img_np = img.to_numpy_ref()
+    print("before")
+    rects = cv_lite.rgb888_find_rectangles_with_corners(
+            image_shape, img_np,
+            canny_thresh1, canny_thresh2,
+            approx_epsilon,
+            area_min_ratio,
+            max_angle_cos,
+            gaussian_blur_size
+        )
+    if rects:
+        best = max(rects, key=lambda r: r[2]*r[3])  # r[2]=w, r[3]=h
+        # 提取四个角点：格式 (cx1,cy1, cx2,cy2, cx3,cy3, cx4,cy4) 索引4~11
+        corners = [(best[4], best[5]), (best[6], best[7]),
+                   (best[8], best[9]), (best[10], best[11])]
+        return corners
+    else:
+        print("No rectangle detected.")
+        return None
 
-    return rects
-#def detect_rectangle(img):
-
-#    img_gray = img.to_grayscale(copy=False)    # 节省内存
-#    img_np = img_gray.bytearray()  # 获取灰度数据
-#    image_shape = (img.height(), img.width())  # 注意顺序：高、宽
-
-#    rects = cv_lite.grayscale_find_rectangles_with_corners(
-#        image_shape, img_np,
-#        CANNY_THRESH1, CANNY_THRESH2,
-#        APPROX_EPSILON,
-#        AREA_MIN_RATIO,
-#        MAX_ANGLE_COS,
-#        GAUSSIAN_BLUR_SIZE
-#    )
-#    if not rects:
-#        return None
-#    # 找出面积最大的矩形（w*h 最大）
-#    best = max(rects, key=lambda r: r[2]*r[3])  # r[2]=w, r[3]=h
-#    # 提取四个角点：格式 (cx1,cy1, cx2,cy2, cx3,cy3, cx4,cy4) 索引4~11
-#    corners = [(best[4], best[5]), (best[6], best[7]),
-#               (best[8], best[9]), (best[10], best[11])]
-#    return corners
 
 
 def sort_corners_clockwise(corners):
@@ -123,6 +113,9 @@ def sort_corners_clockwise(corners):
     corners: [(x1,y1), (x2,y2), (x3,y3), (x4,y4)]
     返回: [左上, 右上, 右下, 左下]
     """
+    if corners is None or len(corners) != 4:
+        print("Error: sort_corners_clockwise received invalid corners:", corners)
+        return None
     # 按 y 坐标排序，取前两个为顶部点，后两个为底部点
     sorted_by_y = sorted(corners, key=lambda p: p[1])
     top = sorted_by_y[:2]      # y 值较小的两个
@@ -136,20 +129,33 @@ def sort_corners_clockwise(corners):
     return [top_left, top_right, bottom_right, bottom_left]
 
 
+def display_rectangles(img, corners):
+    if corners is None or len(corners) != 4:
+        return img
+    img.draw_string_advanced(0,0,20,str(corners),color=(255,0,0))
+    for i in range(4):
+        img.draw_line(corners[i][0], corners[i][1], corners[(i+1)%4][0], corners[(i+1)%4][1], color=(0,255,0))
+        img.draw_cross(corners[i][0], corners[i][1], color=(0,255,0), size=20, thickness=3)
+
+    return img
+
+
  # ---------- 红色激光笔识别 ----------
 def detect_RedBlobs(img):
-    print("RB1")
+
+
     # 寻找符合红色激光笔阈值的色块
-    blobs = img.find_blobs([LASER_THRESHOLD], pixels_threshold=10, area_threshold=10)
+    blobs = img.find_blobs([laser_threshold], pixels_threshold=10, area_threshold=10)
 
     if blobs:
         # 取面积最大的色块作为激光笔光斑（避免干扰）
         laser_blob = max(blobs, key=lambda b: b.area())
         # 在中心点绘制红色十字
         img.draw_cross(laser_blob.cx(), laser_blob.cy(),color=(0, 0, 255), size=15, thickness=3)
-        # 直接返回中心坐标 (cx, cy)
+        # （可选）在十字上方显示坐标
+        img.draw_string_advanced(laser_blob.cx() + 10, laser_blob.cy() - 10, 20,"Laser", color=(0, 0, 255))
         return (laser_blob.cx(), laser_blob.cy())
-    print("RB2")
+
     return None  # 未检测到则返回 None
 
 
@@ -224,9 +230,7 @@ def Key_Tick(tim):
 
 
 
-count = 0
-control_interval = 70
-step = 0                # 0：空闲；1：等待执行第二步
+
 
 
 
@@ -236,54 +240,41 @@ STATE_DETECT_RECT = 1    # 等待检测矩形
 STATE_MOVE_TO_CORNER = 2 # 正在移向某个角点
 STATE_DONE = 3           # 完成一圈
 
+corners_clockwise = None  # 保存最近检测到的矩形角点
+
 state = 0
 red_pos = 0
+count = 0
+control_interval = 70
+step = 0
 
 # -------------------------------
 # 主循环 / Main loop
 # -------------------------------
 while True:
 
-    print("loop start")
-
     clock.tick()
 
-    print("tick ok")
-
     img = sensor.snapshot()
-
-    print("snapshot ok")
-
-    img.draw_string_advanced(
-        0,0,40,
-        "fps:{}".format(clock.fps()),
-        color=(255,0,0)
-    )
-
-    print("draw ok")
+    img.draw_string_advanced(0, 0, 30,'FPS: ' + str("%.3f" % clock.fps()),color=(255, 255, 255))
 
     red_pos = detect_RedBlobs(img)
 
-    print("blob ok")
-    print("free=", gc.mem_free())
-
     if state == STATE_DETECT_RECT:
-        print("detect state")
-        corners = detect_rectangle(img)
+        img_rgb888 = sensor.snapshot(chn = 1)
+        corners = detect_rectangle(img_rgb888)
+        corners_clockwise = sort_corners_clockwise(corners)
+        print("Detected corners:", corners_clockwise)
+        state = STATE_MOVE_TO_CORNER
 
+    img = display_rectangles(img, corners_clockwise)
     count += 1
     print("count=", count)
-
     if count >= 100:
-        print("set state")
-        state = 1
+        state = STATE_DETECT_RECT
         count = 0
 
-    print("before display")
-
     Display.show_image(img)
-
-    print("after display")
 
     gc.collect()
 
@@ -297,4 +288,3 @@ sensor.stop()
 Display.deinit()
 os.exitpoint(os.EXITPOINT_ENABLE_SLEEP)
 time.sleep_ms(100)
-

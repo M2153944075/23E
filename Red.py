@@ -43,8 +43,6 @@ while True:
                                  "Laser", color=(0, 0, 255))
 
     # 显示FPS
-    img.draw_string_advanced(0, 0, 30,
-                             'FPS: ' + str("%.3f" % clock.fps()),
-                             color=(255, 255, 255))
+    img.draw_string_advanced(0, 0, 30,'FPS: ' + str("%.3f" % clock.fps()),color=(255, 255, 255))
     Display.show_image(img)
     print(clock.fps())
