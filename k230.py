@@ -25,6 +25,12 @@ approx_epsilon      = 0.04      # 多边形拟合精度（比例） / Polygon ap
 area_min_ratio      = 0.001     # 最小面积比例（0~1） / Minimum area ratio (0~1)
 max_angle_cos       = 0.5       # 最大角余弦（值越小越接近矩形） / Max cosine of angle (smaller closer to rectangle)
 gaussian_blur_size  = 5         # 高斯模糊核大小（奇数） / Gaussian blur kernel size (odd number)
+canny_thresh1       = 48        # Canny 边缘检测低阈值 / Canny edge low threshold
+canny_thresh2       = 155       # Canny 边缘检测高阈值 / Canny edge high threshold
+approx_epsilon      = 0.04      # 多边形拟合精度（比例） / Polygon approximation precision (ratio)
+area_min_ratio      = 0.001     # 最小面积比例（0~1） / Minimum area ratio (0~1)
+max_angle_cos       = 0.5       # 最大角余弦（值越小越接近矩形） / Max cosine of angle (smaller closer to rectangle)
+gaussian_blur_size  = 5         # 高斯模糊核大小（奇数） / Gaussian blur kernel size (odd number)
 
 
 
@@ -105,6 +111,28 @@ def detect_rectangle(img):
         print("No rectangle detected.")
         return None
 
+    gc.collect()
+
+    img_np = img.to_numpy_ref()
+    print("before")
+    rects = cv_lite.rgb888_find_rectangles_with_corners(
+            image_shape, img_np,
+            canny_thresh1, canny_thresh2,
+            approx_epsilon,
+            area_min_ratio,
+            max_angle_cos,
+            gaussian_blur_size
+        )
+    if rects:
+        best = max(rects, key=lambda r: r[2]*r[3])  # r[2]=w, r[3]=h
+        # 提取四个角点：格式 (cx1,cy1, cx2,cy2, cx3,cy3, cx4,cy4) 索引4~11
+        corners = [(best[4], best[5]), (best[6], best[7]),
+                   (best[8], best[9]), (best[10], best[11])]
+        return corners
+    else:
+        print("No rectangle detected.")
+        return None
+
 
 
 def sort_corners_clockwise(corners):
@@ -113,6 +141,9 @@ def sort_corners_clockwise(corners):
     corners: [(x1,y1), (x2,y2), (x3,y3), (x4,y4)]
     返回: [左上, 右上, 右下, 左下]
     """
+    if corners is None or len(corners) != 4:
+        print("Error: sort_corners_clockwise received invalid corners:", corners)
+        return None
     if corners is None or len(corners) != 4:
         print("Error: sort_corners_clockwise received invalid corners:", corners)
         return None
@@ -140,11 +171,25 @@ def display_rectangles(img, corners):
     return img
 
 
+def display_rectangles(img, corners):
+    if corners is None or len(corners) != 4:
+        return img
+    img.draw_string_advanced(0,0,20,str(corners),color=(255,0,0))
+    for i in range(4):
+        img.draw_line(corners[i][0], corners[i][1], corners[(i+1)%4][0], corners[(i+1)%4][1], color=(0,255,0))
+        img.draw_cross(corners[i][0], corners[i][1], color=(0,255,0), size=20, thickness=3)
+
+    return img
+
+
  # ---------- 红色激光笔识别 ----------
 def detect_RedBlobs(img):
 
 
+
+
     # 寻找符合红色激光笔阈值的色块
+    blobs = img.find_blobs([laser_threshold], pixels_threshold=10, area_threshold=10)
     blobs = img.find_blobs([laser_threshold], pixels_threshold=10, area_threshold=10)
 
     if blobs:
@@ -154,7 +199,10 @@ def detect_RedBlobs(img):
         img.draw_cross(laser_blob.cx(), laser_blob.cy(),color=(0, 0, 255), size=15, thickness=3)
         # （可选）在十字上方显示坐标
         img.draw_string_advanced(laser_blob.cx() + 10, laser_blob.cy() - 10, 20,"Laser", color=(0, 0, 255))
+        # （可选）在十字上方显示坐标
+        img.draw_string_advanced(laser_blob.cx() + 10, laser_blob.cy() - 10, 20,"Laser", color=(0, 0, 255))
         return (laser_blob.cx(), laser_blob.cy())
+
 
     return None  # 未检测到则返回 None
 
@@ -234,6 +282,7 @@ def Key_Tick(tim):
 
 
 
+
 # ---------- 4. 状态机 ----------
 # 状态定义
 STATE_DETECT_RECT = 1    # 等待检测矩形
@@ -242,8 +291,13 @@ STATE_DONE = 3           # 完成一圈
 
 corners_clockwise = None  # 保存最近检测到的矩形角点
 
+corners_clockwise = None  # 保存最近检测到的矩形角点
+
 state = 0
 red_pos = 0
+count = 0
+control_interval = 70
+step = 0
 count = 0
 control_interval = 70
 step = 0
@@ -256,6 +310,7 @@ while True:
     clock.tick()
 
     img = sensor.snapshot()
+    img.draw_string_advanced(0, 0, 30,'FPS: ' + str("%.3f" % clock.fps()),color=(255, 255, 255))
     img.draw_string_advanced(0, 0, 30,'FPS: ' + str("%.3f" % clock.fps()),color=(255, 255, 255))
 
     red_pos = detect_RedBlobs(img)
